@@ -50,44 +50,37 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    // PeerJS server options
-    const peerServers = [
-        {
-            host: 'peer-server.web.app',
-            secure: true,
-            port: 443,
-            path: '/'
-        },
-        {
-            host: 'peerjs.herokuapp.com',
-            secure: true,
-            port: 443,
-            path: '/'
-        },
-        {
-            // Default PeerJS cloud server as last resort
-            host: '0.peerjs.com',
-            secure: true,
-            port: 443,
-            path: '/'
-        }
-    ];
-    
-    // Track which server we're currently using
-    let currentServerIndex = 0;
-    
     // Initialize PeerJS connection
     function initPeer() {
         try {
+            // Check if PeerJS is available
+            if (typeof Peer === 'undefined') {
+                console.error('PeerJS library not loaded yet. Will retry in 2 seconds.');
+                updateStatus('Loading PeerJS library...', 'status-connecting');
+                setTimeout(initPeer, 2000);
+                return;
+            }
+            
             updateStatus('Connecting to PeerJS server...', 'status-connecting');
             
-            // Create a new Peer with a random ID using the current server
-            const serverConfig = peerServers[currentServerIndex];
-            console.log(`Trying PeerJS server: ${serverConfig.host}`);
+            // Create a new Peer with a random ID using the official PeerJS cloud server
+            // This uses the default PeerJS server with no custom configuration
+            console.log('Connecting to default PeerJS cloud server');
             
-            peer = new Peer(null, {
-                debug: 2,
-                ...serverConfig
+            // Destroy existing peer if it exists
+            if (peer && !peer.destroyed) {
+                peer.destroy();
+            }
+            
+            // Create new peer with debug enabled
+            peer = new Peer({
+                debug: 3, // Verbose logging
+                config: {
+                    'iceServers': [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:global.stun.twilio.com:3478' }
+                    ]
+                }
             });
             
             // When we get a connection ID
@@ -117,19 +110,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('PeerJS error:', err);
                 updateStatus('Connection error: ' + err.type, 'status-disconnected');
                 
-                // If the server is down or network error, try the next server
+                // If the server is down or network error, try to reconnect
                 if (err.type === 'server-error' || err.type === 'network' || err.type === 'disconnected') {
-                    // Try the next server in the list
-                    currentServerIndex = (currentServerIndex + 1) % peerServers.length;
-                    console.log(`Switching to next PeerJS server: ${peerServers[currentServerIndex].host}`);
-                    
                     // Destroy the current peer if it exists
                     if (peer && !peer.destroyed) {
                         peer.destroy();
                     }
                     
-                    // Try to connect with the next server after a short delay
-                    setTimeout(initPeer, 1000);
+                    // Try to reconnect after a short delay
+                    console.log('Attempting to reconnect to PeerJS server...');
+                    setTimeout(initPeer, 2000);
                 }
             });
             
@@ -140,19 +130,44 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Try to reconnect immediately
                 if (peer && !peer.destroyed) {
+                    console.log('Attempting immediate reconnection...');
                     peer.reconnect();
                 }
                 
-                // If reconnection fails, try to create a new peer after a delay
-                setTimeout(() => {
-                    if (!peer || peer.disconnected) {
-                        console.log('Reconnection failed, initializing new peer connection');
+                // Set up a more aggressive reconnection strategy
+                let reconnectAttempts = 0;
+                const maxReconnectAttempts = 5;
+                const reconnectInterval = setInterval(() => {
+                    reconnectAttempts++;
+                    
+                    if (peer && !peer.disconnected) {
+                        // Successfully reconnected
+                        console.log('Successfully reconnected to PeerJS server');
+                        clearInterval(reconnectInterval);
+                        updateStatus('Connected to PeerJS server', '');
+                        return;
+                    }
+                    
+                    if (reconnectAttempts >= maxReconnectAttempts) {
+                        // Max attempts reached, create a new peer
+                        console.log(`Max reconnection attempts (${maxReconnectAttempts}) reached, creating new peer`);
+                        clearInterval(reconnectInterval);
+                        
                         if (peer && !peer.destroyed) {
                             peer.destroy();
                         }
-                        initPeer();
+                        
+                        // Create a new peer connection
+                        setTimeout(initPeer, 1000);
+                        return;
                     }
-                }, 3000);
+                    
+                    // Try to reconnect again
+                    console.log(`Reconnection attempt ${reconnectAttempts}/${maxReconnectAttempts}...`);
+                    if (peer && !peer.destroyed) {
+                        peer.reconnect();
+                    }
+                }, 2000);
             });
             
             // Check URL for connection parameter

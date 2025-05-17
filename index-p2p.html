@@ -23,7 +23,28 @@
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     
     <!-- PeerJS for WebRTC connections -->
-    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <script>
+        // Check if PeerJS library loaded correctly
+        window.addEventListener('load', function() {
+            if (typeof Peer === 'undefined') {
+                console.error('PeerJS library failed to load. Loading from alternative CDN...');
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js';
+                document.head.appendChild(script);
+                
+                // Check if the fallback loaded
+                script.onload = function() {
+                    console.log('PeerJS loaded from fallback CDN');
+                    // Reinitialize the peer connection if the main script has already run
+                    if (typeof initPeer === 'function') {
+                        console.log('Reinitializing peer connection');
+                        initPeer();
+                    }
+                };
+            }
+        });
+    </script>
 </head>
 <body>
     <div class="container">
