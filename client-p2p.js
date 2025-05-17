@@ -1,6 +1,24 @@
 // Client-side JavaScript for QuickShare P2P application
 // This version uses PeerJS for WebRTC connections and works on GitHub Pages
 
+// Check for mobile device
+const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+console.log(`Device type detected: ${isMobileDevice ? 'Mobile' : 'Desktop'}`);
+
+// Add mobile-specific meta tags if needed
+if (isMobileDevice) {
+    // Ensure proper viewport settings for mobile
+    const viewportMeta = document.querySelector('meta[name="viewport"]');
+    if (viewportMeta) {
+        viewportMeta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+    }
+    
+    // Add a class to the body for mobile-specific CSS
+    document.addEventListener('DOMContentLoaded', () => {
+        document.body.classList.add('mobile-device');
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // DOM Elements
     const deviceIdElement = document.getElementById('device-id');
@@ -35,8 +53,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileChunks = {};
     const chunkSize = 16 * 1024; // 16KB chunks
     
-    // Initialize PeerJS
-    initPeer();
+    // Initialize with mobile-specific handling
+    if (isMobileDevice) {
+        // On mobile, we need to ensure the PeerJS library is fully loaded
+        // and the device is ready before initializing
+        console.log('Mobile device detected, using delayed initialization');
+        updateStatus('Preparing connection for mobile...', 'status-connecting');
+        
+        // Give mobile browsers a moment to fully initialize
+        setTimeout(() => {
+            console.log('Starting mobile initialization');
+            initPeer();
+        }, 1000);
+    } else {
+        // Desktop initialization
+        initPeer();
+    }
     
     // Set up copy button
     if (copyUrlBtn) {
@@ -61,27 +93,75 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
-            updateStatus('Connecting to PeerJS server...', 'status-connecting');
+            // Detect if we're on mobile
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            
+            // On mobile, we'll show a more detailed status message
+            if (isMobile) {
+                updateStatus('Initializing connection (mobile)...', 'status-connecting');
+                console.log('Mobile device detected, using optimized settings');
+            } else {
+                updateStatus('Connecting to PeerJS server...', 'status-connecting');
+            }
             
             // Create a new Peer with a random ID using the official PeerJS cloud server
-            // This uses the default PeerJS server with no custom configuration
-            console.log('Connecting to default PeerJS cloud server');
+            console.log('Connecting to PeerJS cloud server');
             
             // Destroy existing peer if it exists
             if (peer && !peer.destroyed) {
                 peer.destroy();
+                // Give a little time for cleanup on mobile
+                if (isMobile) {
+                    setTimeout(() => {
+                        createNewPeerConnection(isMobile);
+                    }, 500);
+                    return;
+                }
             }
             
-            // Create new peer with debug enabled
-            peer = new Peer({
-                debug: 3, // Verbose logging
-                config: {
-                    'iceServers': [
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:global.stun.twilio.com:3478' }
-                    ]
-                }
-            });
+            // Create the new peer connection
+            createNewPeerConnection(isMobile);
+        } catch (error) {
+            console.error('Error in initPeer:', error);
+            updateStatus('Failed to initialize connection. Retrying...', 'status-error');
+            setTimeout(initPeer, 3000);
+        }
+    }
+    
+    // Helper function to create a new peer connection
+    function createNewPeerConnection(isMobile) {
+        console.log(`Creating new peer connection for ${isMobile ? 'mobile' : 'desktop'} device`);
+        
+        // Use different configurations for mobile vs desktop
+        const peerConfig = {
+            debug: isMobile ? 1 : 2, // Less verbose logging for mobile
+            config: {
+                'iceServers': [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:global.stun.twilio.com:3478' }
+                ],
+                'sdpSemantics': 'unified-plan',
+                'iceCandidatePoolSize': isMobile ? 5 : 10
+            }
+        };
+        
+        // Add mobile-specific settings
+        if (isMobile) {
+            // Reduce resource usage on mobile
+            peerConfig.config.bundlePolicy = 'max-bundle';
+            peerConfig.config.rtcpMuxPolicy = 'require';
+        }
+        
+        // Create the peer with appropriate config
+        try {
+            peer = new Peer(peerConfig);
+        } catch (error) {
+            console.error('Error creating Peer object:', error);
+            // Try with minimal configuration as fallback
+            peer = new Peer();
+        }
             
             // When we get a connection ID
             peer.on('open', (id) => {
@@ -108,18 +188,71 @@ document.addEventListener('DOMContentLoaded', () => {
             // Handle errors
             peer.on('error', (err) => {
                 console.error('PeerJS error:', err);
-                updateStatus('Connection error: ' + err.type, 'status-disconnected');
                 
-                // If the server is down or network error, try to reconnect
-                if (err.type === 'server-error' || err.type === 'network' || err.type === 'disconnected') {
-                    // Destroy the current peer if it exists
-                    if (peer && !peer.destroyed) {
-                        peer.destroy();
-                    }
-                    
-                    // Try to reconnect after a short delay
-                    console.log('Attempting to reconnect to PeerJS server...');
-                    setTimeout(initPeer, 2000);
+                // Detect if we're on mobile
+                const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                
+                // Handle specific error types
+                switch(err.type) {
+                    case 'browser-incompatible':
+                        updateStatus('Your browser may not fully support WebRTC. Try using Chrome or Firefox.', 'status-error');
+                        break;
+                        
+                    case 'invalid-id':
+                        updateStatus('Invalid ID - retrying with a new ID', 'status-disconnected');
+                        // Destroy and recreate with a random ID
+                        if (peer && !peer.destroyed) {
+                            peer.destroy();
+                        }
+                        setTimeout(initPeer, 1500);
+                        break;
+                        
+                    case 'unavailable-id':
+                        updateStatus('ID already taken - generating a new one', 'status-disconnected');
+                        // Will automatically get a new ID
+                        break;
+                        
+                    case 'peer-unavailable':
+                        updateStatus('The peer you\'re trying to connect to is not available', 'status-error');
+                        break;
+                        
+                    case 'webrtc':
+                        if (isMobile) {
+                            updateStatus('WebRTC connection failed - check your mobile permissions', 'status-error');
+                            // Show a more helpful message for mobile users
+                            alert('Please make sure your browser has permission to use camera and microphone, even if this app doesn\'t use them. WebRTC requires these permissions on some mobile devices.');
+                        } else {
+                            updateStatus('WebRTC connection failed', 'status-error');
+                        }
+                        break;
+                        
+                    case 'network':
+                    case 'server-error':
+                    case 'disconnected':
+                    case 'socket-error':
+                    case 'socket-closed':
+                        updateStatus(`Connection error (${err.type}) - attempting to reconnect...`, 'status-disconnected');
+                        
+                        // Destroy the current peer if it exists
+                        if (peer && !peer.destroyed) {
+                            peer.destroy();
+                        }
+                        
+                        // Use a shorter delay for mobile to prevent timeout issues
+                        const reconnectDelay = isMobile ? 1000 : 2000;
+                        console.log(`Attempting to reconnect to PeerJS server in ${reconnectDelay}ms...`);
+                        setTimeout(initPeer, reconnectDelay);
+                        break;
+                        
+                    default:
+                        updateStatus(`Connection error: ${err.type}`, 'status-disconnected');
+                        // For unknown errors, try to reconnect
+                        setTimeout(() => {
+                            if (peer && !peer.destroyed) {
+                                peer.destroy();
+                            }
+                            initPeer();
+                        }, 3000);
                 }
             });
             
@@ -672,8 +805,65 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function updateStatus(message, className) {
+        // Add mobile-specific context to status messages
+        if (isMobileDevice) {
+            // For connection errors on mobile, add more helpful information
+            if (className === 'status-disconnected' || className === 'status-error') {
+                if (message.includes('error') || message.includes('failed') || message.includes('disconnected')) {
+                    message += ' (Mobile: Try refreshing the page or check your internet connection)';
+                }
+            }
+        }
+        
+        console.log(`Status update: ${message}`);
         statusMessage.textContent = message;
         statusMessage.className = className || '';
+        
+        // For mobile devices, show a toast notification for important status changes
+        if (isMobileDevice && (className === 'status-disconnected' || className === 'status-error' || className === 'status-connected')) {
+            showMobileToast(message, className);
+        }
+    }
+    
+    // Show a mobile-friendly toast notification
+    function showMobileToast(message, type) {
+        // Create toast element if it doesn't exist
+        let toast = document.getElementById('mobile-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'mobile-toast';
+            toast.style.position = 'fixed';
+            toast.style.bottom = '20px';
+            toast.style.left = '50%';
+            toast.style.transform = 'translateX(-50%)';
+            toast.style.padding = '10px 20px';
+            toast.style.borderRadius = '5px';
+            toast.style.color = 'white';
+            toast.style.zIndex = '1000';
+            toast.style.textAlign = 'center';
+            toast.style.transition = 'opacity 0.3s ease-in-out';
+            document.body.appendChild(toast);
+        }
+        
+        // Set toast style based on status type
+        if (type === 'status-disconnected' || type === 'status-error') {
+            toast.style.backgroundColor = '#e74c3c';
+        } else if (type === 'status-connected') {
+            toast.style.backgroundColor = '#2ecc71';
+        } else if (type === 'status-connecting') {
+            toast.style.backgroundColor = '#3498db';
+        } else {
+            toast.style.backgroundColor = '#7f8c8d';
+        }
+        
+        // Set message and show toast
+        toast.textContent = message;
+        toast.style.opacity = '1';
+        
+        // Hide toast after 3 seconds
+        setTimeout(() => {
+            toast.style.opacity = '0';
+        }, 3000);
     }
     
     function addConnectedPeer(peerId) {
