@@ -50,19 +50,44 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
+    // PeerJS server options
+    const peerServers = [
+        {
+            host: 'peer-server.web.app',
+            secure: true,
+            port: 443,
+            path: '/'
+        },
+        {
+            host: 'peerjs.herokuapp.com',
+            secure: true,
+            port: 443,
+            path: '/'
+        },
+        {
+            // Default PeerJS cloud server as last resort
+            host: '0.peerjs.com',
+            secure: true,
+            port: 443,
+            path: '/'
+        }
+    ];
+    
+    // Track which server we're currently using
+    let currentServerIndex = 0;
+    
     // Initialize PeerJS connection
     function initPeer() {
         try {
             updateStatus('Connecting to PeerJS server...', 'status-connecting');
             
-            // Create a new Peer with a random ID
+            // Create a new Peer with a random ID using the current server
+            const serverConfig = peerServers[currentServerIndex];
+            console.log(`Trying PeerJS server: ${serverConfig.host}`);
+            
             peer = new Peer(null, {
                 debug: 2,
-                // Using the free PeerJS server - for production, consider using your own
-                host: 'peerjs-server.herokuapp.com',
-                secure: true,
-                port: 443,
-                path: '/'
+                ...serverConfig
             });
             
             // When we get a connection ID
@@ -92,25 +117,42 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('PeerJS error:', err);
                 updateStatus('Connection error: ' + err.type, 'status-disconnected');
                 
-                // If the server is down, try to reconnect after a delay
-                if (err.type === 'server-error' || err.type === 'network') {
-                    setTimeout(initPeer, 5000);
+                // If the server is down or network error, try the next server
+                if (err.type === 'server-error' || err.type === 'network' || err.type === 'disconnected') {
+                    // Try the next server in the list
+                    currentServerIndex = (currentServerIndex + 1) % peerServers.length;
+                    console.log(`Switching to next PeerJS server: ${peerServers[currentServerIndex].host}`);
+                    
+                    // Destroy the current peer if it exists
+                    if (peer && !peer.destroyed) {
+                        peer.destroy();
+                    }
+                    
+                    // Try to connect with the next server after a short delay
+                    setTimeout(initPeer, 1000);
                 }
             });
             
             // Handle disconnection
             peer.on('disconnected', () => {
                 console.log('Disconnected from PeerJS server');
-                updateStatus('Disconnected from server', 'status-disconnected');
+                updateStatus('Disconnected from server - attempting to reconnect...', 'status-disconnected');
                 
-                // Try to reconnect
+                // Try to reconnect immediately
+                if (peer && !peer.destroyed) {
+                    peer.reconnect();
+                }
+                
+                // If reconnection fails, try to create a new peer after a delay
                 setTimeout(() => {
-                    if (peer && peer.destroyed) {
+                    if (!peer || peer.disconnected) {
+                        console.log('Reconnection failed, initializing new peer connection');
+                        if (peer && !peer.destroyed) {
+                            peer.destroy();
+                        }
                         initPeer();
-                    } else if (peer) {
-                        peer.reconnect();
                     }
-                }, 5000);
+                }, 3000);
             });
             
             // Check URL for connection parameter
