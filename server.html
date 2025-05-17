@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuickShare - Server Version</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- QR Code generation library with fallback -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+    <script>
+        // Check if QRCode library loaded correctly
+        window.addEventListener('load', function() {
+            if (typeof QRCode === 'undefined') {
+                console.error('QRCode library failed to load. Loading from alternative CDN...');
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+                document.head.appendChild(script);
+            }
+        });
+    </script>
+    
+    <!-- QR Code scanner library -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>QuickShare</h1>
+            <p>Share files between devices on your local network</p>
+        </header>
+
+        <main>
+            <div class="connection-info">
+                <div id="device-id-container">
+                    <h2>Your Device ID</h2>
+                    <p id="device-id">Connecting...</p>
+                    <div id="qrcode-container">
+                        <div id="qrcode"></div>
+                    </div>
+                    <div class="manual-share">
+                        <p>Or share this link:</p>
+                        <input type="text" id="share-url" readonly>
+                        <button id="copy-url-btn">Copy</button>
+                    </div>
+                </div>
+                
+                <div class="connect-form">
+                    <h2>Connect to Another Device</h2>
+                    <div class="connect-options">
+                        <div class="connect-manual">
+                            <input type="text" id="peer-id" placeholder="Enter Device ID">
+                            <button id="connect-btn">Connect</button>
+                        </div>
+                        <div class="connect-divider">
+                            <span>OR</span>
+                        </div>
+                        <div class="connect-scan">
+                            <button id="scan-qr-btn">Scan QR Code</button>
+                            <div id="qr-scanner-container" class="hidden">
+                                <div id="qr-scanner-video-container">
+                                    <video id="qr-scanner-video"></video>
+                                </div>
+                                <div class="scanner-controls">
+                                    <button id="cancel-scan-btn">Cancel</button>
+                                    <button id="switch-camera-btn">Switch Camera</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="file-sharing">
+                <div class="file-upload">
+                    <h2>Share Files</h2>
+                    <input type="file" id="file-input" multiple>
+                    <button id="send-btn" disabled>Send Files</button>
+                </div>
+
+                <div class="file-receive">
+                    <h2>Received Files</h2>
+                    <div id="received-files"></div>
+                </div>
+            </div>
+
+            <div class="connection-status">
+                <h2>Connection Status</h2>
+                <p id="status-message">Not connected</p>
+                <div id="connected-peers"></div>
+            </div>
+        </main>
+
+        <footer>
+            <p>QuickShare - Simple P2P File Sharing</p>
+            <p class="small">Server Version - Requires Node.js server to be running</p>
+        </footer>
+    </div>
+
+    <script src="client.js"></script>
+</body>
+</html>
